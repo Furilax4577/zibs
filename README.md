@@ -1,2 +1,1 @@
-# zibs
-Zendure Inverters &amp; Battery Status
+# Zibs - Zendure Inverter & Battery Status

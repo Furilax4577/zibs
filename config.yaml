@@ -1,0 +1,21 @@
+name: "Zendure Inverter & Battery Status"
+description: "Zendure Inverter & Battery Status"
+version: "0.0.1"
+slug: "zibs"
+maintainer: "Douville Quentin"
+init: false
+arch:
+  - aarch64
+  - amd64
+  - armhf
+  - armv7
+  - i386
+startup: services
+options:
+  zendure_email: "" # Zendure account email
+  zendure_snNumber: "" # Zendure device serial number (Hyper2000 for exemple)
+  zendure_apiUrl: "https://app.zendure.tech/eu/developer/api/apply" # Zendure API Url, can be replaced if you're not in EU
+schema:
+  zendure_email: str
+  zendure_snNumber: str
+  zendure_apiUrl: str
