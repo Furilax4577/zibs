@@ -4,6 +4,7 @@ import sys
 import paho.mqtt.client as mqtt
 import requests
 import re
+import os
 
 from typing import TypedDict
 from datetime import datetime
@@ -24,9 +25,15 @@ formatted = now.strftime("%Y-%m-%d %H:%M:%S")
 
 print(f"Démarrage de l'addon {formatted}")  # Exemple : 2025-02-13 14:35:12
 
+# Détection de l'environnement
+if os.path.exists("/data/options.json"):
+    CONFIG_PATH = "/data/options.json"  # Mode Home Assistant
+else:
+    CONFIG_PATH = "data/options.json"  # Mode local
+
+print(f"Chargement de la configuration depuis : {CONFIG_PATH}")
+
 # Variables
-CONFIG_PATH = "/data/options.json"
-CONFIG_PATH = "data/options.json" # local
 TOPIC_STATE_PATTERN = r"([^/]+)/([^/]+)/state"
 ZENDURE_DEVICES = []
 
