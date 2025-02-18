@@ -1,6 +1,6 @@
 name: "Zendure Inverter & Battery Status"
 description: "Zendure Inverter & Battery Status"
-version: "0.0.2"
+version: "0.0.3"
 slug: "zibs"
 maintainer: "Douville Quentin"
 init: false

@@ -1,96 +1,183 @@
-# Import des dépendances
 import json
 import sys
-import paho.mqtt.client as mqtt
-import requests
-import re
 import os
-
-from typing import TypedDict
+import re
+import requests
+import paho.mqtt.client as mqtt
 from datetime import datetime
+from typing import TypedDict
+import sys
+import time
 
+sys.stdout.reconfigure(encoding='utf-8')  # Force l'encodage UTF-8 pour l'affichage
+print(f"Encodage utilisé : {sys.stdout.encoding}")  # Vérifier l'encodage actuel
+
+# TYPES
 class ZendureApiResponseData(TypedDict):
     appKey: str
     secret: str
     mqttUrl: str
     port: int
+
 class ZendureApiResponse(TypedDict):
     code: int
     success: bool
     data: ZendureApiResponseData
     msg: str
 
-now = datetime.now()
-formatted = now.strftime("%Y-%m-%d %H:%M:%S")
+class ZendureStatePackData(TypedDict):
+    sn: str
 
-print(f"Démarrage de l'addon {formatted}")  # Exemple : 2025-02-13 14:35:12
+class ZendureState(TypedDict):
+    outputHomePower: int
+    packInputPower: int
+    sn: str
+    remainOutTime: int
+    hyperTmp: int
+    packData: ZendureStatePackData
+    
+class ZendureTopic(TypedDict):
+   topic: str
+   payload: str
+   
 
-# Détection de l'environnement
+
+# CONSTANTES
+TOPIC_STATE_PATTERN = r"([^/]+)/([^/]+)/state"
+
+# Chemin de config (détection auto)
 if os.path.exists("/data/options.json"):
     CONFIG_PATH = "/data/options.json"  # Mode Home Assistant
 else:
-    CONFIG_PATH = "data/options.json"  # Mode local
+    CONFIG_PATH = "data/options.json"   # Mode local
 
-print(f"Chargement de la configuration depuis : {CONFIG_PATH}")
 
-# Variables
-TOPIC_STATE_PATTERN = r"([^/]+)/([^/]+)/state"
-ZENDURE_DEVICES = []
-
-def load_config():
-    "Charge la configuration depuis Home Assistant."
+# FONCTIONS
+def load_config(path: str) -> dict:
+    """Charge la configuration au format JSON depuis un fichier."""
     try:
-        with open(CONFIG_PATH, "r") as file:
+        with open(path, "r", encoding="utf-8") as file:
             return json.load(file)
+    except (FileNotFoundError, json.JSONDecodeError) as err:
+        print(f"ERREUR: Impossible de charger la config depuis {path} : {err}")
+        sys.exit(1)
     except Exception as e:
-        print(f"ERREUR: Lors du chargement de la config : {e}")
-        sys.exit(1)  # Quitte le script immédiatement
+        print(f"ERREUR INCONNUE lors du chargement de la config : {e}")
+        sys.exit(1)
 
-# Charger la configuration HASS
-config = load_config()
-ZENDURE_EMAIL = config.get("zendure_email", "default@example.com")
-ZENDURE_SN = config.get("zendure_snNumber", "UNKNOWN_SN")
-ZENDURE_API_URL = config.get("zendure_apiUrl", "https://default-api-url.com")
 
-print(f"{ZENDURE_EMAIL} {ZENDURE_SN} {ZENDURE_API_URL}")
+def send_api_request(url: str, payload: dict) -> ZendureApiResponse:
+    """Envoie une requête POST à l'API Zendure et renvoie la réponse au format dict typé."""
+    try:
+        response = requests.post(url, json=payload, timeout=10)
+        response.raise_for_status()  # Lève une exception en cas de statut HTTP >= 400
+        data: ZendureApiResponse = response.json()
+        return data
+    except requests.exceptions.RequestException as err:
+        print(f"ERREUR: Echec de la requête API ({url}): {err}")
+        sys.exit(1)
 
-if not ZENDURE_EMAIL or not ZENDURE_SN:
-    print("ERREUR: `zendure_email` et `zendure_snNumber` doivent être définis dans la configuration.")
-    sys.exit(1)  # Quitte le script immédiatement
 
-# Envoi de la requête API
-response = requests.post(ZENDURE_API_URL, json={"snNumber": ZENDURE_SN, "account": ZENDURE_EMAIL})
+def on_connect(client, userdata, flags, reason_code, properties=None):
+    """Callback exécuté lors de la connexion MQTT."""
+    print("Connecté au broker MQTT.")
+    # On souscrit au topic 'MAIN_TOPIC' stocké dans userdata
+    main_topic = userdata.get("main_topic", "#")
+    client.subscribe(main_topic)
 
-data:ZendureApiResponse = response.json()
 
-if data.get("success"):
-    api_data = data.get("data")
+def on_message(client, userdata, msg):
+    """Callback exécuté à la réception d'un message MQTT."""
+    match = re.match(TOPIC_STATE_PATTERN, msg.topic)
+    if match:
+        payload_str = msg.payload.decode('utf-8')
+        payload = json.loads(payload_str)  
+        device_uuid = match.group(2)
+        devices_list = userdata["devices_list"]
+        current_time = time.time()
+        if device_uuid not in devices_list:
+            # devices_list.append(device_uuid)
+            devices_list[device_uuid] = {
+                "count":0,
+                "solar_energy_kwh":0.0,
+                "last_solar_input":0,
+                "last_solar_update_time":current_time
+            }
+            print(f"Nouveau device ajouté : {device_uuid}") 
 
-    MQTT_BROKER = api_data.get("mqttUrl", "mqtt-eu.zen-iot.com")
-    MQTT_PORT = api_data.get("port", 1883)
-    MQTT_USER = api_data.get("appKey", "default_user")
-    MQTT_PASSWORD = api_data.get("secret", "default_password")
-    MAIN_TOPIC = f"{MQTT_USER}/#"
+        if payload.get("solarInputPower"):
+            solar_input_power = payload.get("solarInputPower", 0) 
+            delta_time = current_time - devices_list[device_uuid]["last_solar_update_time"]
+            if delta_time > 0:
+                energy_increment = (solar_input_power * delta_time) / (3600.0*1000)  # kWh
+                print(f"{delta_time} {solar_input_power} {devices_list[device_uuid]['solar_energy_kwh']} {energy_increment}")
+                devices_list[device_uuid]["solar_energy_kwh"] += energy_increment
+                devices_list[device_uuid]["last_solar_input"] = solar_input_power
+                devices_list[device_uuid]["last_solar_update_time"] = current_time 
 
-    client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)
-    client.username_pw_set(MQTT_USER, MQTT_PASSWORD)
+        devices_list[device_uuid]["count"] += 1  
 
-    def on_connect(client, userdata, flags, reason_code, properties):
-        client.subscribe(MAIN_TOPIC)
+        print(f"Message reçu : topic={msg.topic}, payload={payload}")
+        # print(f"{devices_list}")
+    # else:
+    #     print(f"Message ignoré (topic ne match pas la regex) : {msg.topic}")
 
-    def on_message(client, userdata, msg):
-        match = re.match(TOPIC_STATE_PATTERN, msg.topic)
-        if match:
-            deviceUUID = match.group(2)
-            if deviceUUID not in ZENDURE_DEVICES:
-                ZENDURE_DEVICES.append(deviceUUID)
-                print(f"Nouveau device ajouté {deviceUUID}")
-            print(msg.topic+" "+str(msg.payload))
 
+def main():
+    """Point d'entrée principal du script."""
+    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    print(f"Démarrage de l'addon {now}")
+
+    print(f"Chargement de la configuration depuis : {CONFIG_PATH}")
+    config = load_config(CONFIG_PATH)
+
+    # Lecture des variables config
+    zendure_email = config.get("zendure_email")
+    zendure_sn = config.get("zendure_snNumber")
+    zendure_api_url = config.get("zendure_apiUrl")
+
+    # Validation rapide
+    if not zendure_email or not zendure_sn or not zendure_api_url:
+        print("ERREUR: `zendure_email`, `zendure_snNumber` et `zendure_apiUrl` doivent être définis.")
+        sys.exit(1)
+
+    print(f"Paramètres récupérés : email={zendure_email}, sn={zendure_sn}, api_url={zendure_api_url}")
+
+    # Appel de l'API Zendure
+    data = send_api_request(zendure_api_url, {"snNumber": zendure_sn, "account": zendure_email})
+
+    if not data.get("success"):
+        print(f"Erreur : Réponse API invalide. Contenu : {data.get('msg')}")
+        sys.exit(1)
+
+    # Récupération des informations MQTT
+    api_data = data["data"]
+    mqtt_broker = api_data.get("mqttUrl", "mqtt-eu.zen-iot.com")
+    mqtt_port = api_data.get("port", 1883)
+    mqtt_user = api_data.get("appKey", "default_user")
+    mqtt_password = api_data.get("secret", "default_password")
+    main_topic = f"{mqtt_user}/#"
+
+    # Configuration du client MQTT
+    client = mqtt.Client(callback_api_version=mqtt.CallbackAPIVersion.VERSION2, protocol=mqtt.MQTTv5, userdata={
+        "main_topic": main_topic,
+        "devices_list": {}  # liste des devices détectés
+    })
+    client.username_pw_set(mqtt_user, mqtt_password)
     client.on_connect = on_connect
     client.on_message = on_message
 
-    client.connect(MQTT_BROKER, MQTT_PORT, 60)
-    client.loop_forever()
-else:
-    print(f"Erreur : Réponse API invalide. Contenu : {data.get('msg')}")
+    # Connexion et boucle infinie
+    try:
+        print(f"Connexion au broker MQTT : {mqtt_broker}:{mqtt_port} (user={mqtt_user})")
+        client.connect(mqtt_broker, mqtt_port, keepalive=60)
+        client.loop_forever()
+    except KeyboardInterrupt:
+        print("Arrêt demandé par l'utilisateur.")
+    except Exception as e:
+        print(f"ERREUR INCONNUE lors de la connexion ou de la boucle MQTT : {e}")
+        sys.exit(1)
+
+
+if __name__ == "__main__":
+    main()

@@ -2,6 +2,10 @@
 
 Tous les changements notables de ce projet seront documentés dans ce fichier.
 
+## [0.0.3] - 2025-02-13
+
+- Travail sur la structure du code
+
 ## [0.0.2] - 2025-02-13
 
 - Réccupération des credencials sur l'API Zendure à partir de l'email et de l'un des numéro de série (example l'un de vos Hyper2000)
