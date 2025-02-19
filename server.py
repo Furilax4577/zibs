@@ -9,6 +9,13 @@ from typing import TypedDict
 import sys
 import time
 
+if os.getenv("SUPERVISOR_TOKEN"):
+    print("Le script tourne dans Home Assistant Supervisor")
+elif os.getenv("HASSIO_TOKEN"):
+    print("Le script tourne dans un add-on Home Assistant")
+else:
+    print("Le script tourne en dehors de Home Assistant")
+
 sys.stdout.reconfigure(encoding='utf-8')  # Force l'encodage UTF-8 pour l'affichage
 print(f"Encodage utilisé : {sys.stdout.encoding}")  # Vérifier l'encodage actuel
 
@@ -105,19 +112,31 @@ def on_message(client, userdata, msg):
             }
             print(f"Nouveau device ajouté : {device_uuid}") 
 
-        if payload.get("solarInputPower"):
+        if payload.get("solarInputPower") and device_uuid in devices_list:
             solar_input_power = payload.get("solarInputPower", 0) 
             delta_time = current_time - devices_list[device_uuid]["last_solar_update_time"]
             if delta_time > 0:
-                energy_increment = (solar_input_power * delta_time) / (3600.0*1000)  # kWh
-                print(f"{delta_time} {solar_input_power} {devices_list[device_uuid]['solar_energy_kwh']} {energy_increment}")
+                energy_increment = (devices_list[device_uuid]["last_solar_input"] * delta_time) / (3600*1000)  
+
+                print(f"{device_uuid}: {delta_time} {solar_input_power} {energy_increment} {devices_list[device_uuid]['solar_energy_kwh']}")
+                
                 devices_list[device_uuid]["solar_energy_kwh"] += energy_increment
                 devices_list[device_uuid]["last_solar_input"] = solar_input_power
-                devices_list[device_uuid]["last_solar_update_time"] = current_time 
+                devices_list[device_uuid]["last_solar_update_time"] = current_time
+                
+                # hass.states.set(
+                #     "sensor.zibs",
+                #     energy_increment,
+                #     {
+                #         "unit_of_measurement": "kWh",
+                #         "device_class": "energy",
+                #         "state_class": "total_increasing"
+                #     }
+                # )                
 
         devices_list[device_uuid]["count"] += 1  
 
-        print(f"Message reçu : topic={msg.topic}, payload={payload}")
+        # print(f"Message reçu : topic={msg.topic}, payload={payload}")
         # print(f"{devices_list}")
     # else:
     #     print(f"Message ignoré (topic ne match pas la regex) : {msg.topic}")

@@ -2,6 +2,11 @@
 
 Tous les changements notables de ce projet seront documentés dans ce fichier.
 
+## [0.0.4] - 2025-02-19
+
+- Test de réponse à l'intégration HASS / non HASS
+- Correction de la lecture des valeurs Watt retournées et conversion vers kWh
+
 ## [0.0.3] - 2025-02-13
 
 - Travail sur la structure du code
