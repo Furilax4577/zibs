@@ -9,8 +9,12 @@ from typing import TypedDict
 import sys
 import time
 
+SUPERVISOR_TOKEN: str
+IS_ADDON : bool = False 
+
 if os.getenv("SUPERVISOR_TOKEN"):
     print("Le script tourne dans Home Assistant Supervisor")
+    IS_ADDON = True
 elif os.getenv("HASSIO_TOKEN"):
     print("Le script tourne dans un add-on Home Assistant")
 else:
@@ -124,15 +128,17 @@ def on_message(client, userdata, msg):
                 devices_list[device_uuid]["last_solar_input"] = solar_input_power
                 devices_list[device_uuid]["last_solar_update_time"] = current_time
                 
-                # hass.states.set(
-                #     "sensor.zibs",
-                #     energy_increment,
-                #     {
-                #         "unit_of_measurement": "kWh",
-                #         "device_class": "energy",
-                #         "state_class": "total_increasing"
-                #     }
-                # )                
+                if IS_ADDON:
+                    print("pousser les données vers HASS ici")
+                    # hass.states.set( # type: ignore
+                    #     "sensor.zibs",
+                    #     energy_increment,
+                    #     {
+                    #         "unit_of_measurement": "kWh",
+                    #         "device_class": "energy",
+                    #         "state_class": "total_increasing"
+                    #     }
+                    # )                
 
         devices_list[device_uuid]["count"] += 1  
 

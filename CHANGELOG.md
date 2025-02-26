@@ -2,6 +2,11 @@
 
 Tous les changements notables de ce projet seront documentés dans ce fichier.
 
+## [0.0.5] - 2025-02-19
+
+- Test de la détection automatique de l'environnement d'éxecution
+- Test d'utilisation de hass.states.set
+
 ## [0.0.4] - 2025-02-19
 
 - Test de réponse à l'intégration HASS / non HASS
